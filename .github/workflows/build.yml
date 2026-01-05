@@ -3,58 +3,70 @@ name: Gurotopia Multi-Arch Build
 on:
   push:
     branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
-  build-linux:
-    name: Linux (${{ matrix.arch }})
+  # --- JOB 1: LINUX X86_64 ---
+  build-linux-x64:
+    name: Linux (x86_64)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        arch: [x64, arm64] # Menjalankan dua build sekaligus
-
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Install Dependencies (x64)
-      if: matrix.arch == 'x64'
+    - name: Install Dependencies
       run: |
         sudo apt update
         sudo apt install -y g++-13 libsqlite3-dev libssl-dev libenet-dev
 
-    - name: Install Dependencies (ARM64)
-      if: matrix.arch == 'arm64'
-      run: |
-        sudo apt update
-        sudo apt install -y g++-aarch64-linux-gnu libsqlite3-dev:arm64 libssl-dev:arm64
-        # Catatan: Untuk ARM64 cross-compile mungkin perlu setup multiarch di apt
-        sudo dpkg --add-architecture arm64
-        sudo apt update
-        sudo apt install -y libsqlite3-dev:arm64 libssl-dev:arm64 libenet-dev:arm64 || echo "Library ARM64 manual required"
-
-    - name: Compile Linux
+    - name: Compile
       run: |
         make clean
-        if [ "${{ matrix.arch }}" = "x64" ]; then
-          make CXX=g++-13 -j$(nproc)
-        else
-          # Cross-compile untuk ARM64
-          make CXX=aarch64-linux-gnu-g++-13 -j$(nproc)
-        fi
+        make CXX=g++-13 -j$(nproc)
       
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Gurotopia-Linux-${{ matrix.arch }}
+        name: Gurotopia-Linux-x64
         path: main.out
 
+  # --- JOB 2: LINUX ARM64 (Menggunakan QEMU) ---
+  build-linux-arm64:
+    name: Linux (ARM64)
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Build on ARM64
+      uses: uraimo/run-on-arch-action@v2
+      with:
+        arch: aarch64
+        distro: ubuntu22.04 # Menggunakan Ubuntu versi stabil untuk ARM
+        
+        # Install dependencies di dalam container ARM
+        install: |
+          apt-get update
+          apt-get install -y build-essential g++ libsqlite3-dev libssl-dev libenet-dev
+
+        # Proses compile di dalam container ARM
+        run: |
+          make clean
+          make CXX=g++ -j$(nproc)
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Gurotopia-Linux-arm64
+        path: main.out
+
+  # --- JOB 3: WINDOWS X64 ---
   build-windows:
     name: Windows (x64)
     runs-on: windows-latest
-
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4

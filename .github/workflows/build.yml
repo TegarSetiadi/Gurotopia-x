@@ -1,76 +1,71 @@
-name: Gurotopia Multi-Arch Build
+name: Gurotopia Full Static Universal Build
 
 on:
   push:
     branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
-  # --- JOB 1: LINUX X86_64 ---
+  # --- LINUX X86_64 FULL STATIC ---
   build-linux-x64:
-    name: Linux (x86_64)
+    name: Linux (x86_64 Static)
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-
     - name: Install Dependencies
       run: |
         sudo apt update
-        sudo apt install -y g++-13 libsqlite3-dev libssl-dev libenet-dev
-
+        sudo apt install -y g++-13 libsqlite3-dev libssl-dev libenet-dev zlib1g-dev
     - name: Compile
       run: |
         make clean
-        make CXX=g++-13 -j$(nproc)
-      
+        # Menggunakan -static dan menambahkan library sistem yang diperlukan Linux
+        make CXX="g++-13 -static-libgcc -static-libstdc++" \
+             LDFLAGS="-static -lssl -lcrypto -lsqlite3 -lenet -lpthread -ldl -lz" -j$(nproc)
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Gurotopia-Linux-x64
+        name: Gurotopia-Linux-x64-Static
         path: main.out
 
-  # --- JOB 2: LINUX ARM64 (Menggunakan QEMU) ---
+  # --- LINUX ARM64 FULL STATIC ---
   build-linux-arm64:
-    name: Linux (ARM64)
+    name: Linux (ARM64 Static)
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
-
     - name: Build on ARM64
       uses: uraimo/run-on-arch-action@v2
       with:
         arch: aarch64
-        distro: ubuntu22.04 # Menggunakan Ubuntu versi stabil untuk ARM
-        
-        # Install dependencies di dalam container ARM
+        distro: ubuntu24.04
         install: |
           apt-get update
-          apt-get install -y build-essential g++ libsqlite3-dev libssl-dev libenet-dev
-
-        # Proses compile di dalam container ARM
+          apt-get install -y build-essential g++ libsqlite3-dev libssl-dev libenet-dev zlib1g-dev
         run: |
           make clean
-          make CXX=g++ -j$(nproc)
-
+          # Sama seperti x64, menggunakan mode static
+          make CXX="g++ -static-libgcc -static-libstdc++" \
+               LDFLAGS="-static -lssl -lcrypto -lsqlite3 -lenet -lpthread -ldl -lz" -j$(nproc)
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Gurotopia-Linux-arm64
+        name: Gurotopia-Linux-arm64-Static
         path: main.out
 
-  # --- JOB 3: WINDOWS X64 ---
+  # --- WINDOWS X64 FULL STATIC ---
   build-windows:
-    name: Windows (x64)
+    name: Windows (x64 Static)
     runs-on: windows-latest
     steps:
     - name: Checkout Code
       uses: actions/checkout@v4
-
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
@@ -86,11 +81,13 @@ jobs:
     - name: Compile Windows
       shell: msys2 {0}
       run: |
-        mingw32-make CXX=g++ -j$(nproc)
-        if [ -f main.out ]; then mv main.out Gurotopia-Win64.exe; fi
+        mingw32-make CXX="g++ -static -static-libgcc -static-libstdc++" \
+                   LDFLAGS="-static -lssl -lcrypto -lsqlite3 -lenet -lws2_32 -lgdi32 -lcrypt32" -j$(nproc)
+        
+        if [ -f main.out ]; then mv main.out Gurotopia-Static-Win64.exe; fi
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Gurotopia-Windows-x64
+        name: Gurotopia-Windows-Static
         path: "*.exe"

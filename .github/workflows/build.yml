@@ -1,14 +1,12 @@
-name: Gurotopia Full Static Universal Build
+name: Gurotopia Full Static Universal (Anti-Error)
 
 on:
   push:
     branches: [ "main", "master" ]
-  pull_request:
-    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
-  # --- LINUX X86_64 FULL STATIC ---
+  # --- LINUX X86_64 ---
   build-linux-x64:
     name: Linux (x86_64 Static)
     runs-on: ubuntu-latest
@@ -19,19 +17,22 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y g++-13 libsqlite3-dev libssl-dev libenet-dev zlib1g-dev
-    - name: Compile
+    - name: Compile & Link
       run: |
         make clean
-        # Menggunakan -static dan menambahkan library sistem yang diperlukan Linux
-        make CXX="g++-13 -static-libgcc -static-libstdc++" \
-             LDFLAGS="-static -lssl -lcrypto -lsqlite3 -lenet -lpthread -ldl -lz" -j$(nproc)
+        # Jalankan make tanpa flag static agar PCH tidak error
+        make CXX=g++-13 -j$(nproc)
+        # Gabungkan semua file .o secara manual menjadi Full Static
+        g++-13 -static -static-libgcc -static-libstdc++ $(find build -name "*.o") -o main.out \
+               -lssl -lcrypto -lsqlite3 -lenet -lpthread -ldl -lz
+      
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Gurotopia-Linux-x64-Static
+        name: Gurotopia-Linux-x64
         path: main.out
 
-  # --- LINUX ARM64 FULL STATIC ---
+  # --- LINUX ARM64 (UBUNTU 22.04 + GCC 13) ---
   build-linux-arm64:
     name: Linux (ARM64 Static)
     runs-on: ubuntu-latest
@@ -44,22 +45,26 @@ jobs:
       uses: uraimo/run-on-arch-action@v2
       with:
         arch: aarch64
-        distro: ubuntu24.04
+        distro: ubuntu22.04
         install: |
           apt-get update
-          apt-get install -y build-essential g++ libsqlite3-dev libssl-dev libenet-dev zlib1g-dev
+          apt-get install -y software-properties-common
+          add-apt-repository ppa:ubuntu-toolchain-r/test -y
+          apt-get update
+          apt-get install -y build-essential g++-13 libsqlite3-dev libssl-dev libenet-dev zlib1g-dev
         run: |
           make clean
-          # Sama seperti x64, menggunakan mode static
-          make CXX="g++ -static-libgcc -static-libstdc++" \
-               LDFLAGS="-static -lssl -lcrypto -lsqlite3 -lenet -lpthread -ldl -lz" -j$(nproc)
+          make CXX=g++-13 -j$(nproc)
+          g++-13 -static -static-libgcc -static-libstdc++ $(find build -name "*.o") -o main.out \
+                 -lssl -lcrypto -lsqlite3 -lenet -lpthread -ldl -lz
+
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Gurotopia-Linux-arm64-Static
+        name: Gurotopia-Linux-arm64
         path: main.out
 
-  # --- WINDOWS X64 FULL STATIC ---
+  # --- WINDOWS X64 (PORTABLE FIX) ---
   build-windows:
     name: Windows (x64 Static)
     runs-on: windows-latest
@@ -77,15 +82,17 @@ jobs:
           mingw-w64-x86_64-sqlite3
           mingw-w64-x86_64-openssl
           mingw-w64-x86_64-enet
-
-    - name: Compile Windows
+    - name: Compile & Link Windows
       shell: msys2 {0}
       run: |
-        mingw32-make CXX="g++ -static -static-libgcc -static-libstdc++" \
-                   LDFLAGS="-static -lssl -lcrypto -lsqlite3 -lenet -lws2_32 -lgdi32 -lcrypt32" -j$(nproc)
+        mingw32-make clean
+        # Compile normal dulu (tanpa flag static di CXX)
+        mingw32-make CXX=g++ -j$(nproc)
+        # Link manual semua file .o menjadi satu EXE Full Static
+        # Kita tambahkan -lwinmm untuk fungsi waktu ENet di Windows
+        g++ -static -static-libgcc -static-libstdc++ $(find build -name "*.o") -o Gurotopia-Static.exe \
+            -lssl -lcrypto -lsqlite3 -lenet -lws2_32 -lgdi32 -lcrypt32 -lwinmm
         
-        if [ -f main.out ]; then mv main.out Gurotopia-Static-Win64.exe; fi
-
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:

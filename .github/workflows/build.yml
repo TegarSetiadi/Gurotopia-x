@@ -1,0 +1,84 @@
+name: Gurotopia Multi-Arch Build
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    name: Linux (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64] # Menjalankan dua build sekaligus
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Install Dependencies (x64)
+      if: matrix.arch == 'x64'
+      run: |
+        sudo apt update
+        sudo apt install -y g++-13 libsqlite3-dev libssl-dev libenet-dev
+
+    - name: Install Dependencies (ARM64)
+      if: matrix.arch == 'arm64'
+      run: |
+        sudo apt update
+        sudo apt install -y g++-aarch64-linux-gnu libsqlite3-dev:arm64 libssl-dev:arm64
+        # Catatan: Untuk ARM64 cross-compile mungkin perlu setup multiarch di apt
+        sudo dpkg --add-architecture arm64
+        sudo apt update
+        sudo apt install -y libsqlite3-dev:arm64 libssl-dev:arm64 libenet-dev:arm64 || echo "Library ARM64 manual required"
+
+    - name: Compile Linux
+      run: |
+        make clean
+        if [ "${{ matrix.arch }}" = "x64" ]; then
+          make CXX=g++-13 -j$(nproc)
+        else
+          # Cross-compile untuk ARM64
+          make CXX=aarch64-linux-gnu-g++-13 -j$(nproc)
+        fi
+      
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Gurotopia-Linux-${{ matrix.arch }}
+        path: main.out
+
+  build-windows:
+    name: Windows (x64)
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-make
+          mingw-w64-x86_64-sqlite3
+          mingw-w64-x86_64-openssl
+          mingw-w64-x86_64-enet
+
+    - name: Compile Windows
+      shell: msys2 {0}
+      run: |
+        mingw32-make CXX=g++ -j$(nproc)
+        if [ -f main.out ]; then mv main.out Gurotopia-Win64.exe; fi
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Gurotopia-Windows-x64
+        path: "*.exe"
